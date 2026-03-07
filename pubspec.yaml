@@ -1,0 +1,23 @@
+name: converter_app
+description: "Converta - Universal offline file converter for Windows."
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.11.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  file_picker: ^10.3.10
+  window_manager: ^0.5.1
+  adaptive_platform_ui: ^0.1.103
+  libvips_ffi: ^0.1.2+8.16.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
