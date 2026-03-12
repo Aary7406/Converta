@@ -28,7 +28,7 @@ void main() async {
     minimumSize: Size(500, 600),
     center: true,
     title: 'Converta',
-    titleBarStyle: TitleBarStyle.normal,
+    titleBarStyle: TitleBarStyle.hidden,
   );
 
   await windowManager.waitUntilReadyToShow(windowOptions, () async {
@@ -74,7 +74,7 @@ class ConverterApp extends StatelessWidget {
         filledButtonTheme: FilledButtonThemeData(
           style: FilledButton.styleFrom(
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(30),
             ),
           ),
         ),
@@ -82,7 +82,7 @@ class ConverterApp extends StatelessWidget {
         outlinedButtonTheme: OutlinedButtonThemeData(
           style: OutlinedButton.styleFrom(
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(30),
             ),
             side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
           ),

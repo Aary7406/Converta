@@ -34,42 +34,43 @@ class FormatDropdown extends StatelessWidget {
           ),
           const SizedBox(width: 16),
           Expanded(
-            child: DropdownButtonFormField<String>(
-              initialValue: selectedFormat,
-              dropdownColor: const Color(0xE01A1A2E),
-              style: const TextStyle(color: Colors.white, fontSize: 14),
-              decoration: InputDecoration(
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(
-                    color: Colors.white.withValues(alpha: 0.2),
+            child: GlassContainer(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+              borderRadius: 35,
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: selectedFormat,
+                  isExpanded: true,
+                  alignment: AlignmentDirectional.center,
+                  dropdownColor: const Color(0xE01A1A2E), // Translucent dark
+                  borderRadius: BorderRadius.circular(25),
+                  icon: Icon(
+                    Icons.arrow_drop_down,
+                    color: Colors.white.withValues(alpha: 0.7),
                   ),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(
-                    color: Colors.white.withValues(alpha: 0.2),
+                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                  hint: Align(
+                    alignment: Alignment.center,
+                    child: Text(
+                      'Select format',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.4),
+                      ),
+                    ),
                   ),
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
+                  items: formats.map((format) {
+                    return DropdownMenuItem<String>(
+                      value: format,
+                      alignment: AlignmentDirectional.center,
+                      child: Text(
+                        '.${format.toUpperCase()}',
+                        style: const TextStyle(fontWeight: FontWeight.w500),
+                      ),
+                    );
+                  }).toList(),
+                  onChanged: onFormatChanged,
                 ),
               ),
-              hint: Text(
-                'Select format',
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.4)),
-              ),
-              items: formats.map((format) {
-                return DropdownMenuItem<String>(
-                  value: format,
-                  child: Text(
-                    '.${format.toUpperCase()}',
-                    style: const TextStyle(fontWeight: FontWeight.w500),
-                  ),
-                );
-              }).toList(),
-              onChanged: onFormatChanged,
             ),
           ),
         ],

@@ -17,7 +17,7 @@ class GlassContainer extends StatelessWidget {
     super.key,
     required this.child,
     this.padding = const EdgeInsets.all(20),
-    this.borderRadius = 20,
+    this.borderRadius = 35,
   });
 
   @override
@@ -28,8 +28,8 @@ class GlassContainer extends StatelessWidget {
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.35),
-            blurRadius: 20,
-            spreadRadius: -4,
+            blurRadius: 50,
+            spreadRadius: -1,
             offset: const Offset(0, 8),
           ),
         ],

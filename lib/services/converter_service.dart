@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:isolate';
 
 import '../models/conversion_job.dart';
 import '../services/libvips_converter.dart';
@@ -29,6 +30,67 @@ import 'format_registry.dart';
 ///    to skip audio processing entirely.
 
 class ConverterService {
+  /// Runs conversion off the UI thread.
+  ///
+  /// ISOLATION STRATEGY:
+  ///   - libvips: Already runs in a compute isolate internally
+  ///     (VipsPipelineCompute). Calling it directly avoids double-isolating.
+  ///   - FFmpeg/ImageMagick: Wraps the Process.run call in Isolate.run()
+  ///     so subprocess management doesn't block the main event loop.
+  ///
+  /// WHY Isolate.run():
+  ///   - Spawns a one-shot isolate, runs the function, returns the result
+  ///   - Uses Isolate.exit() internally for zero-copy result transfer
+  ///   - Auto-cleans up — no manual port/isolate lifecycle management
+  ///   - Error propagation works with standard try/catch
+  ///
+  /// CLOSURE SAFETY:
+  ///   The closure captures only String values (inputPath, outputFormat,
+  ///   outputPath) which are immutable and sendable between isolates.
+  ///   ConverterService.convert is a static method — no instance state.
+  static Future<ConversionResult> convertInBackground({
+    required String inputPath,
+    required String outputFormat,
+    required String outputPath,
+  }) async {
+    final inputExtension = inputPath.split('.').last;
+    final engine = FormatRegistry.getEngineForConversion(
+      inputExtension,
+      outputFormat,
+    );
+
+    if (engine == null) {
+      return ConversionResult(
+        success: false,
+        outputPath: '',
+        message: 'Unsupported input format: .$inputExtension',
+        elapsed: Duration.zero,
+      );
+    }
+
+    if (engine == ConversionEngine.libvips) {
+      // libvips already uses VipsPipelineCompute (built-in compute isolate).
+      // Calling it directly avoids unnecessary double-isolate overhead.
+      return LibvipsConverter.convertImage(
+        inputPath: inputPath,
+        outputPath: outputPath,
+        outputFormat: outputFormat,
+      );
+    }
+
+    // FFmpeg and ImageMagick spawn external processes via Process.run().
+    // Moving this to a background isolate ensures the main isolate's event
+    // loop stays free for 60fps UI rendering (Matrix Rain + glass cards).
+    return Isolate.run(
+      () => convert(
+        inputPath: inputPath,
+        outputFormat: outputFormat,
+        outputPath: outputPath,
+      ),
+      debugName: 'converta_convert',
+    );
+  }
+
   static Future<ConversionResult> convert({
     required String inputPath,
     required String outputFormat,

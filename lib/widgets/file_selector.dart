@@ -11,11 +11,13 @@ import 'glass_container.dart';
 class FileSelector extends StatelessWidget {
   final File? selectedFile;
   final ValueChanged<File> onFileSelected;
+  final List<String>? allowedExtensions;
 
   const FileSelector({
     super.key,
     required this.selectedFile,
     required this.onFileSelected,
+    this.allowedExtensions,
   });
 
   @override
@@ -27,6 +29,7 @@ class FileSelector extends StatelessWidget {
       child: GestureDetector(
         onTap: _pickFile,
         child: GlassContainer(
+          borderRadius: 25.0,
           child: Row(
             children: [
               Container(
@@ -83,10 +86,10 @@ class FileSelector extends StatelessWidget {
   }
 
   void _pickFile() async {
-    final allowedExtensions = FormatRegistry.allInputFormats.toList();
+    final exts = allowedExtensions ?? FormatRegistry.allInputFormats.toList();
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: allowedExtensions,
+      allowedExtensions: exts,
     );
     if (result != null && result.files.single.path != null) {
       onFileSelected(File(result.files.single.path!));

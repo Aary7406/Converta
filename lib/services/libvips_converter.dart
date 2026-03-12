@@ -1,7 +1,10 @@
 import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:libvips_ffi/libvips_ffi.dart';
 
 import '../models/conversion_job.dart';
+import 'system_info.dart';
 
 /// High-speed lossless image converter using libvips C library via Dart FFI.
 ///
@@ -54,8 +57,11 @@ class LibvipsConverter {
         outputFormat: fmt,
       );
 
-      // Write the result buffer to the output path
-      await File(outputPath).writeAsBytes(result.data);
+      // Write the result buffer to the output path in RAM-aware chunks.
+      // Instead of writeAsBytes (which may buffer the entire payload
+      // internally), we stream through an IOSink in chunks sized to
+      // the system's available physical memory.
+      await _writeChunked(outputPath, result.data);
 
       stopwatch.stop();
       return ConversionResult(
@@ -155,6 +161,33 @@ class LibvipsConverter {
         return JpegOptions(quality: 95, optimizeCoding: true).toSuffix();
       default:
         return '.${format.toLowerCase()}';
+    }
+  }
+
+  // ─── Chunked file writer ──────────────────────────────────────────────────
+
+  /// Writes bytes to disk in RAM-aware chunks.
+  ///
+  /// Instead of File.writeAsBytes (which may buffer the entire payload
+  /// internally), this streams the data through an IOSink in chunks
+  /// sized to the system's available physical memory.
+  ///
+  /// For a 200 MB TIFF on a 4 GB machine, this uses 512 KB chunks
+  /// (390 writes) instead of one 200 MB burst.
+  static Future<void> _writeChunked(String path, Uint8List data) async {
+    final chunkSize = await SystemInfo.optimalWriteChunkSize();
+    final sink = File(path).openWrite();
+
+    try {
+      for (var offset = 0; offset < data.length; offset += chunkSize) {
+        final end = (offset + chunkSize).clamp(0, data.length);
+        // sublistView creates a zero-copy view into the original buffer —
+        // no additional memory allocated for each chunk.
+        sink.add(Uint8List.sublistView(data, offset, end));
+      }
+      await sink.flush();
+    } finally {
+      await sink.close();
     }
   }
 }

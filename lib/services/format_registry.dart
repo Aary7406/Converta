@@ -1,4 +1,5 @@
 import '../models/conversion_job.dart';
+import '../models/media_category.dart';
 
 /// The "brain" that knows which formats exist and which engine handles them.
 ///
@@ -30,6 +31,67 @@ class FormatRegistry {
   static const allInputFormats = [...mediaFormats, ...imageFormats];
 
   // ──────────────────────────────────────────────────────────────────────
+  // CATEGORY-AWARE HELPERS (for tab-based UI)
+  // ──────────────────────────────────────────────────────────────────────
+
+  /// Returns the accepted input extensions for a given tab category.
+  static List<String> inputFormatsForCategory(MediaCategory category) {
+    switch (category) {
+      case MediaCategory.photo:
+        return imageFormats;
+      case MediaCategory.video:
+        return videoFormats;
+      case MediaCategory.audio:
+        return audioFormats;
+      case MediaCategory.files:
+        return []; // Coming soon
+    }
+  }
+
+  /// "Format Change" — same-type outputs (e.g. PNG→WEBP, MP4→MKV).
+  /// Excludes the input format and the 'jpeg' duplicate.
+  static List<String> sameTypeFormats(MediaCategory category, String inputExt) {
+    final ext = _normalize(inputExt);
+    final pool = inputFormatsForCategory(category);
+    return pool.where((f) => f != ext && f != 'jpeg').toList();
+  }
+
+  /// "Filetype Change" — which OTHER categories can this input convert to?
+  /// Returns a list of target categories (excluding Files = coming soon).
+  static List<MediaCategory> crossTypeTargets(MediaCategory source) {
+    switch (source) {
+      case MediaCategory.photo:
+        // Image → Video (not supported yet), so only show "Video" as future
+        return [MediaCategory.video];
+      case MediaCategory.video:
+        // Video → Audio (extract), Video → Photo (frame extraction)
+        return [MediaCategory.audio, MediaCategory.photo];
+      case MediaCategory.audio:
+        return [MediaCategory.video];
+      case MediaCategory.files:
+        return [];
+    }
+  }
+
+  /// "Filetype Change" — formats available when converting TO a target category.
+  static List<String> crossTypeFormats(
+    MediaCategory target,
+    String inputExt,
+  ) {
+    final ext = _normalize(inputExt);
+    switch (target) {
+      case MediaCategory.photo:
+        return imageFormats.where((f) => f != 'jpeg').toList();
+      case MediaCategory.video:
+        return videoFormats.where((f) => f != ext).toList();
+      case MediaCategory.audio:
+        return audioFormats.where((f) => f != ext).toList();
+      case MediaCategory.files:
+        return [];
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
   // PUBLIC METHODS
   // ──────────────────────────────────────────────────────────────────────
 
@@ -42,34 +104,23 @@ class FormatRegistry {
   }
 
   /// Returns valid output formats for a given input.
-  ///
-  /// CROSS-ENGINE LOGIC (Phase 2):
-  ///   - Video input → can output to: other video, audio, AND image formats
-  ///     (FFmpeg handles all of these: re-encode, extract audio, extract frame)
-  ///   - Audio input → can output to: other audio and video formats
-  ///   - Image input → can output to: other image formats only
-  ///     (images have no audio/video data to extract)
   static List<String> getOutputFormats(String inputExtension) {
     final ext = _normalize(inputExtension);
 
     if (videoFormats.contains(ext)) {
-      // Video → any media format + image formats (frame extraction)
       final outputs = <String>[
         ...videoFormats.where((f) => f != ext),
         ...audioFormats,
-        // Image outputs via frame extraction (exclude jpeg duplicate)
         ...imageFormats.where((f) => f != 'jpeg'),
       ];
       return outputs;
     }
 
     if (audioFormats.contains(ext)) {
-      // Audio → other audio + video formats
       return mediaFormats.where((f) => f != ext).toList();
     }
 
     if (imageFormats.contains(ext)) {
-      // Image → other image formats only
       return imageFormats.where((f) => f != ext && f != 'jpeg').toList();
     }
 
@@ -77,10 +128,6 @@ class FormatRegistry {
   }
 
   /// Determines which engine should handle a specific conversion pair.
-  ///
-  /// Rule: engine is determined by whoever can best READ the INPUT.
-  /// - Media (video/audio) → FFmpeg (it's the only one that can read video)
-  /// - Image → libvips first (C FFI, faster + lossless), ImageMagick as fallback
   static ConversionEngine? getEngineForConversion(
     String inputExt,
     String outputExt,
@@ -88,22 +135,15 @@ class FormatRegistry {
     final input = _normalize(inputExt);
     final output = _normalize(outputExt);
 
-    // Media input: FFmpeg handles everything
     if (mediaFormats.contains(input)) return ConversionEngine.ffmpeg;
-
-    // Image input → output is GIF: libvips GIF support is limited, use ImageMagick
     if (imageFormats.contains(input) && output == 'gif') {
       return ConversionEngine.imageMagick;
     }
-
-    // Image → image: use libvips (5-10x faster, lossless C library)
     if (imageFormats.contains(input)) return ConversionEngine.libvips;
-
     return null;
   }
 
   /// Returns true if this conversion extracts a single frame from video.
-  /// Used by ConverterService to pick the right FFmpeg arguments.
   static bool isVideoToImage(String inputExt, String outputExt) {
     final input = _normalize(inputExt);
     final output = _normalize(outputExt);
