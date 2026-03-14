@@ -26,19 +26,30 @@ class GlassContainer extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(borderRadius),
         boxShadow: [
+          // Lighter shadow to improve repaint performance (Systematic Debugging)
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.35),
-            blurRadius: 50,
+            color: Colors.black.withValues(alpha: 0.25),
+            blurRadius: 24,
             spreadRadius: -1,
             offset: const Offset(0, 8),
           ),
         ],
+        // Simple subtle border instead of a complex multi-stop gradient overlay
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.15),
+          width: 1.0,
+        ),
+        // A subtle static color tint allows the blur to handle the heavy lifting without extra gradient calculations
+        color: Colors.white.withValues(alpha: 0.05),
       ),
-      child: AdaptiveBlurView(
-        // systemUltraThinMaterial = clearest, least frosted glass
-        blurStyle: BlurStyle.systemUltraThinMaterial,
+      child: ClipRRect(
         borderRadius: BorderRadius.circular(borderRadius),
-        child: Padding(padding: padding, child: child),
+        child: AdaptiveBlurView(
+          // systemMaterial provides a solid, "Frosted Glass" look replacing the overly shiny/laggy ultra thin material
+          blurStyle: BlurStyle.systemMaterial,
+          borderRadius: BorderRadius.circular(borderRadius),
+          child: Padding(padding: padding, child: child),
+        ),
       ),
     );
   }

@@ -8,6 +8,7 @@ import '../services/converter_service.dart';
 import '../services/format_registry.dart';
 import '../widgets/conversion_mode_selector.dart';
 import '../widgets/conversion_status.dart';
+import '../widgets/custom_glass_dropdown.dart';
 import '../widgets/file_selector.dart';
 import '../widgets/format_dropdown.dart';
 import '../widgets/glass_container.dart';
@@ -55,6 +56,14 @@ class _ConverterPageState extends State<ConverterPage> {
   final _outputPathController = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    // Listen to output path changes to refresh the Convert button state
+    // without rebuilding the entire tree on every keystroke.
+    _outputPathController.addListener(_onOutputPathChanged);
+  }
+
+  @override
   void didUpdateWidget(ConverterPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.category != widget.category) {
@@ -64,8 +73,15 @@ class _ConverterPageState extends State<ConverterPage> {
 
   @override
   void dispose() {
+    _outputPathController.removeListener(_onOutputPathChanged);
     _outputPathController.dispose();
     super.dispose();
+  }
+
+  /// Lightweight listener: only triggers setState when the Convert button
+  /// enable/disable state actually changes, avoiding full tree rebuilds.
+  void _onOutputPathChanged() {
+    setState(() {});
   }
 
   void _resetAll() {
@@ -229,7 +245,8 @@ class _ConverterPageState extends State<ConverterPage> {
     if (widget.category == MediaCategory.files) {
       return Center(
         child: GlassContainer(
-          padding: const EdgeInsets.all(32),
+          padding: const EdgeInsets.all(32), // Outer is 32px
+          borderRadius: 32,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -268,7 +285,7 @@ class _ConverterPageState extends State<ConverterPage> {
         SliverFillRemaining(
           hasScrollBody: false,
           child: Padding(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.all(32), // 8pt Grid: 32 outer padding
             child: Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 560),
@@ -305,15 +322,51 @@ class _ConverterPageState extends State<ConverterPage> {
                     ],
 
                     // 5. Convert Button
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 32), // 8pt: larger separator before main action
                     SizedBox(
                       height: 52,
-                      child: FilledButton.icon(
+                      child: FilledButton(
                         onPressed: _canConvert ? _onConvert : null,
-                        icon: const Icon(Icons.transform),
-                        label: const Text(
-                          'Convert',
-                          style: TextStyle(fontSize: 16),
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 300),
+                          child: _status == ConversionStatus.converting
+                              ? const Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  key: ValueKey('converting'),
+                                  children: [
+                                    SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2.5,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    SizedBox(width: 12),
+                                    Text(
+                                      'Converting...',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              : const Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  key: ValueKey('idle'),
+                                  children: [
+                                    Icon(Icons.transform),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      'Convert',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                         ),
                       ),
                     ),
@@ -353,7 +406,8 @@ class _ConverterPageState extends State<ConverterPage> {
     final targets = FormatRegistry.crossTypeTargets(widget.category);
 
     return GlassContainer(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(24), // 8pt grid
+      borderRadius: 24, // Consistent radii
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -378,41 +432,21 @@ class _ConverterPageState extends State<ConverterPage> {
                 child: GlassContainer(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 16,
-                    vertical: 0,
+                    vertical: 4, // Make dropdown slightly taller
                   ),
-                  borderRadius: 35,
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<MediaCategory>(
-                      value: _targetCategory,
-                      isExpanded: true,
-                      alignment: AlignmentDirectional.center,
-                      dropdownColor: const Color(0xE01A1A2E),
-                      borderRadius: BorderRadius.circular(25),
-                      icon: Icon(
-                        Icons.arrow_drop_down,
-                        color: Colors.white.withValues(alpha: 0.7),
-                      ),
-                      style: const TextStyle(color: Colors.white, fontSize: 14),
-                      hint: Align(
-                        alignment: Alignment.center,
-                        child: Text(
-                          'Select type',
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.4),
-                          ),
-                        ),
-                      ),
-                      items: targets.map((cat) {
-                        final label = cat.name[0].toUpperCase() +
-                            cat.name.substring(1);
-                        return DropdownMenuItem(
-                          value: cat,
-                          alignment: AlignmentDirectional.center,
-                          child: Text(label),
-                        );
-                      }).toList(),
-                      onChanged: _onTargetCategoryChanged,
-                    ),
+                  borderRadius: 16, // Nested Radii: 24 (parent) - 8 (gap mapping) = 16
+                  child: CustomGlassDropdown<MediaCategory>(
+                    value: _targetCategory,
+                    hint: const Text('Select type'),
+                    items: targets.map((cat) {
+                      final label =
+                          cat.name[0].toUpperCase() + cat.name.substring(1);
+                      return DropdownMenuItem<MediaCategory>(
+                        value: cat,
+                        child: Text(label),
+                      );
+                    }).toList(),
+                    onChanged: _onTargetCategoryChanged,
                   ),
                 ),
               ),
@@ -421,43 +455,20 @@ class _ConverterPageState extends State<ConverterPage> {
 
           // Second dropdown: format within target category
           if (_targetCategory != null && _crossFormats.isNotEmpty) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: 16), // 8pt grid spacing
             GlassContainer(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
-              borderRadius: 35,
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  value: _crossFormat,
-                  isExpanded: true,
-                  alignment: AlignmentDirectional.center,
-                  dropdownColor: const Color(0xE01A1A2E),
-                  borderRadius: BorderRadius.circular(25),
-                  icon: Icon(
-                    Icons.arrow_drop_down,
-                    color: Colors.white.withValues(alpha: 0.7),
-                  ),
-                  style: const TextStyle(color: Colors.white, fontSize: 14),
-                  hint: Align(
-                    alignment: Alignment.center,
-                    child: Text(
-                      'Select format',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.4),
-                      ),
-                    ),
-                  ),
-                  items: _crossFormats.map((f) {
-                    return DropdownMenuItem(
-                      value: f,
-                      alignment: AlignmentDirectional.center,
-                      child: Text(
-                        '.${f.toUpperCase()}',
-                        style: const TextStyle(fontWeight: FontWeight.w500),
-                      ),
-                    );
-                  }).toList(),
-                  onChanged: _onCrossFormatChanged,
-                ),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              borderRadius: 16, // Match upper dropdown
+              child: CustomGlassDropdown<String>(
+                value: _crossFormat,
+                hint: const Text('Select format'),
+                items: _crossFormats.map((f) {
+                  return DropdownMenuItem<String>(
+                    value: f,
+                    child: Text('.${f.toUpperCase()}'),
+                  );
+                }).toList(),
+                onChanged: _onCrossFormatChanged,
               ),
             ),
           ],
@@ -468,20 +479,20 @@ class _ConverterPageState extends State<ConverterPage> {
 
   Widget _buildOutputPath() {
     return GlassContainer(
-      padding: const EdgeInsets.all(16),
-      borderRadius: 25.0,
+      padding: const EdgeInsets.all(24),
+      borderRadius: 24.0,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             'Save to:',
             style: TextStyle(
-              fontSize: 13,
+              fontSize: 14,
               fontWeight: FontWeight.w500,
-              color: Colors.white.withValues(alpha: 0.6),
+              color: Colors.white.withValues(alpha: 0.7), // Better contrast based on ui-ux-pro-max
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 16), // 8pt padding
           Row(
             children: [
               Expanded(
@@ -495,36 +506,43 @@ class _ConverterPageState extends State<ConverterPage> {
                   decoration: InputDecoration(
                     hintText: 'Output file path...',
                     hintStyle: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.3),
+                      color: Colors.white.withValues(alpha: 0.4),
                     ),
                     isDense: true,
                     contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
+                      horizontal: 16,
+                      vertical: 16, // 8pt grid padding for height
                     ),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(12), // Nested radii
                       borderSide: BorderSide(
                         color: Colors.white.withValues(alpha: 0.2),
                       ),
                     ),
                     enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(12),
                       borderSide: BorderSide(
                         color: Colors.white.withValues(alpha: 0.15),
                       ),
                     ),
                   ),
-                  onChanged: (_) => setState(() {}),
+                  onChanged: (_) {},
                 ),
               ),
               const SizedBox(width: 8),
-              IconButton(
-                onPressed: _onBrowseOutput,
-                icon: const Icon(Icons.folder_open, size: 20),
-                tooltip: 'Browse...',
-                style: IconButton.styleFrom(
-                  backgroundColor: Colors.white.withValues(alpha: 0.1),
+              SizedBox(
+                height: 48, // Better touch target size
+                width: 48,
+                child: IconButton(
+                  onPressed: _onBrowseOutput,
+                  icon: const Icon(Icons.folder_open, size: 24),
+                  tooltip: 'Browse...',
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.white.withValues(alpha: 0.1),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12), // Match text field border radius
+                    ),
+                  ),
                 ),
               ),
             ],

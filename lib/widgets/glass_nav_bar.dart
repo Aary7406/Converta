@@ -10,9 +10,8 @@ import 'glass_container.dart';
 ///   - const constructors for static elements
 ///   - RepaintBoundary isolates the navbar from content repaints
 
-const double _kItemHeight = 64.0;
-const double _kNavWidth = 64.0;
-const double _kIndicatorInset = 6.0;
+const double _kItemHeight = 72.0; // 8 * 9
+const double _kNavWidth = 72.0;   // 8 * 9
 
 class GlassNavBar extends StatelessWidget {
   final MediaCategory selected;
@@ -31,19 +30,29 @@ class GlassNavBar extends StatelessWidget {
     (MediaCategory.files, Icons.folder_outlined, Icons.folder, 'Files'),
   ];
 
+  // Catppuccin Macchiato/Mocha Palette for fluid tab transitions
+  static const _catppuccinColors = [
+    Color(0xFFC6A0F6), // Mauve (Photo)
+    Color(0xFF8AADF4), // Blue (Video)
+    Color(0xFFA6DA95), // Green (Audio)
+    Color(0xFFF5A97F), // Peach (Files)
+  ];
+
   @override
   Widget build(BuildContext context) {
     final selectedIndex = _tabs.indexWhere((t) => t.$1 == selected);
+    final activeColor = _catppuccinColors[selectedIndex % _catppuccinColors.length];
+    
     final itemCount = _tabs.length;
     // Total height of the item column
     final totalHeight = itemCount * _kItemHeight;
 
     return RepaintBoundary(
       child: Padding(
-        padding: const EdgeInsets.only(left: 12, top: 12, bottom: 12),
+        padding: const EdgeInsets.only(left: 16, top: 16, bottom: 16), // 8pt grid
         child: GlassContainer(
           padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
-          borderRadius: 50,
+          borderRadius: 40, // More rounded
           child: SizedBox(
             width: _kNavWidth,
             child: Column(
@@ -56,21 +65,27 @@ class GlassNavBar extends StatelessWidget {
                   child: Stack(
                     alignment: Alignment.topCenter,
                     children: [
-                      // ── Animated indicator pill ───────────────────
+                      // ── Animated glowing vertical pill indicator ──
                       AnimatedPositioned(
-                        duration: const Duration(milliseconds: 280),
-                        curve: Curves.easeOutCubic,
-                        top: selectedIndex * _kItemHeight + _kIndicatorInset,
-                        left: _kIndicatorInset,
-                        right: _kIndicatorInset,
-                        height: _kItemHeight - _kIndicatorInset * 2,
-                        child: Container(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.fastOutSlowIn,
+                        // Center the 28px tall pill vertically within the 60px item height
+                        top: selectedIndex * _kItemHeight + (_kItemHeight - 28) / 2,
+                        left: 10, // Inset from the left edge to float near the icon
+                        width: 4, // Thin, elegant pill
+                        height: 28, // Taller pill
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 300),
                           decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(30),
-                            color: Colors.white.withValues(alpha: 0.12),
-                            border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.15),
-                            ),
+                            borderRadius: BorderRadius.circular(4), // Pill shape
+                            color: activeColor, // Solid Catppuccin color
+                            boxShadow: [
+                              BoxShadow(
+                                color: activeColor.withValues(alpha: 0.5), // Glowing effect
+                                blurRadius: 10,
+                                spreadRadius: 1,
+                              ),
+                            ],
                           ),
                         ),
                       ),
@@ -102,7 +117,7 @@ class GlassNavBar extends StatelessWidget {
   }
 }
 
-class _NavItem extends StatelessWidget {
+class _NavItem extends StatefulWidget {
   final IconData icon;
   final String label;
   final bool isActive;
@@ -116,42 +131,66 @@ class _NavItem extends StatelessWidget {
   });
 
   @override
+  State<_NavItem> createState() => _NavItemState();
+}
+
+class _NavItemState extends State<_NavItem> {
+  // @flutter-expert: Encapsulating state locally drastically improves efficiency
+  // State changes here only rebuild the specific icon, NOT the entire column/navbar.
+  bool _isHovered = false;
+
+  @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: SizedBox(
-        width: _kNavWidth,
-        height: _kItemHeight,
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 200),
-                child: Icon(
-                  icon,
-                  key: ValueKey(icon),
-                  size: 22,
-                  color: isActive
-                      ? Colors.white
-                      : Colors.white.withValues(alpha: 0.45),
-                ),
+    // Micro-interactions scaling
+    final isFocused = widget.isActive || _isHovered;
+    final scale = isFocused ? 1.05 : 1.0; 
+    
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: widget.onTap,
+        behavior: HitTestBehavior.opaque,
+        child: SizedBox(
+          width: _kNavWidth,
+          height: _kItemHeight,
+          child: Center(
+            child: AnimatedScale(
+              scale: scale,
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOutBack,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 250),
+                    child: Icon(
+                      widget.icon,
+                      key: ValueKey(widget.icon),
+                      size: 22,
+                      // Lighter off-state so hover state difference is clearer
+                      color: isFocused
+                          ? Colors.white
+                          : Colors.white.withValues(alpha: 0.35),
+                    ),
+                  ),
+                  const SizedBox(height: 8), // 8pt grid
+                  Text(
+                    widget.label,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: isFocused ? FontWeight.w600 : FontWeight.w400,
+                      color: isFocused
+                          ? Colors.white
+                          : Colors.white.withValues(alpha: 0.35),
+                      letterSpacing: 0.2,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 4),
-              Text(
-                label,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 9,
-                  fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
-                  color: isActive
-                      ? Colors.white
-                      : Colors.white.withValues(alpha: 0.4),
-                  letterSpacing: 0.2,
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),

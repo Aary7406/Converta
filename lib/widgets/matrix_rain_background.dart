@@ -215,8 +215,15 @@ class _RainPainter extends CustomPainter {
   }) : super(repaint: repaint);
 
   final _bgPaint = Paint()..color = Colors.black;
-  final _greenPaint = Paint();
   final _whitePaint = Paint()..color = _MatrixRainBackgroundState.white;
+
+  // Pre-allocated Paint objects for 10 discrete alpha levels.
+  // This avoids creating new Color objects per-glyph per-frame (~3000/sec).
+  late final List<Paint> _greenPaints = List.generate(10, (i) {
+    final alpha = ((i + 1) / 10).clamp(0.1, 1.0);
+    return Paint()
+      ..color = _MatrixRainBackgroundState.green.withValues(alpha: alpha);
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -239,11 +246,10 @@ class _RainPainter extends CustomPainter {
         if (i == 0) {
           canvas.drawImageRect(a, src, dst, _whitePaint);
         } else {
-          final alpha = (1.0 - i / col.length).clamp(0.1, 1.0);
-          _greenPaint.color = _MatrixRainBackgroundState.green.withValues(
-            alpha: alpha,
-          );
-          canvas.drawImageRect(a, src, dst, _greenPaint);
+          // Map continuous alpha to one of 10 pre-allocated Paint buckets
+          final alphaFraction = (1.0 - i / col.length).clamp(0.1, 1.0);
+          final paintIndex = ((alphaFraction * 10).ceil() - 1).clamp(0, 9);
+          canvas.drawImageRect(a, src, dst, _greenPaints[paintIndex]);
         }
       }
     }

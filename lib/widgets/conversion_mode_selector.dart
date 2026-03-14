@@ -21,7 +21,7 @@ class ConversionModeSelector extends StatelessWidget {
   Widget build(BuildContext context) {
     return GlassContainer(
       padding: const EdgeInsets.all(8),
-      borderRadius: 35,
+      borderRadius: 24, // Matches children nested radii constraint
       child: Row(
         children: [
           Expanded(
@@ -68,10 +68,11 @@ class _ModeButton extends StatelessWidget {
         duration: const Duration(milliseconds: 200),
         curve: Curves.easeOut,
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+        height: 56, // Touch friendly bounds (ui/ux rule)
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(25),
+          borderRadius: BorderRadius.circular(16), // Nested radii (24 - 8)
           color: isActive
-              ? Colors.white.withValues(alpha: 0.12)
+              ? Colors.white.withValues(alpha: 0.15) // Slightly brighter active state
               : Colors.transparent,
           border: Border.all(
             color: isActive

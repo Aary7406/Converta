@@ -7,11 +7,11 @@ cmake_minimum_required(VERSION 3.14)
 # which SDK headers/libraries the compiler uses during build.
 set(CMAKE_SYSTEM_VERSION 10.0 CACHE STRING "Windows SDK version" FORCE)
 
-project(converter_app LANGUAGES CXX)
+project(Converta LANGUAGES CXX)
 
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
-set(BINARY_NAME "converter_app")
+set(BINARY_NAME "Converta")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.

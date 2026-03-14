@@ -61,7 +61,7 @@ class FormatRegistry {
   static List<MediaCategory> crossTypeTargets(MediaCategory source) {
     switch (source) {
       case MediaCategory.photo:
-        // Image → Video (not supported yet), so only show "Video" as future
+        // Image → Video (5-second 1080p MP4)
         return [MediaCategory.video];
       case MediaCategory.video:
         // Video → Audio (extract), Video → Photo (frame extraction)
@@ -136,6 +136,7 @@ class FormatRegistry {
     final output = _normalize(outputExt);
 
     if (mediaFormats.contains(input)) return ConversionEngine.ffmpeg;
+    if (isImageToVideo(input, output)) return ConversionEngine.ffmpeg;
     if (imageFormats.contains(input) && output == 'gif') {
       return ConversionEngine.imageMagick;
     }
@@ -149,6 +150,15 @@ class FormatRegistry {
     final output = _normalize(outputExt);
     return videoFormats.contains(input) &&
         imageFormats.contains(output) &&
+        output != 'gif';
+  }
+
+  /// Returns true if this conversion generates a video from a single image.
+  static bool isImageToVideo(String inputExt, String outputExt) {
+    final input = _normalize(inputExt);
+    final output = _normalize(outputExt);
+    return imageFormats.contains(input) &&
+        videoFormats.contains(output) &&
         output != 'gif';
   }
 

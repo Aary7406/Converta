@@ -24,7 +24,21 @@ class ConversionStatusWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Hide the status widget entirely while converting, as the Convert button
+    // now actively displays the loading spinner and "Converting..." text.
+    if (status == ConversionStatus.converting) {
+      return const SizedBox.shrink();
+    }
+
+    // Hide idle state entirely if there's no message or output path yet,
+    // to keep the UI exceptionally clean until action is taken.
+    if (status == ConversionStatus.idle && message.isEmpty && outputPath == null) {
+      return const SizedBox.shrink();
+    }
+
     return GlassContainer(
+      padding: const EdgeInsets.all(24), // 8pt padding
+      borderRadius: 24, // Consistent outer radii
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -65,10 +79,10 @@ class ConversionStatusWidget extends StatelessWidget {
             const SizedBox(height: 16),
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(16), // 8pt nested padding
               decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: 0.06),
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(16), // Nested radii
                 border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
               ),
               child: Column(
@@ -93,22 +107,28 @@ class ConversionStatusWidget extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16), // 8pt grid
             Row(
               children: [
                 Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => _openFile(outputPath!),
-                    icon: const Icon(Icons.open_in_new, size: 16),
-                    label: const Text('Open File'),
+                  child: SizedBox(
+                    height: 48, // Touch target sizing for buttons
+                    child: OutlinedButton.icon(
+                      onPressed: () => _openFile(outputPath!),
+                      icon: const Icon(Icons.open_in_new, size: 20),
+                      label: const Text('Open File'),
+                    ),
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 16), // 8pt spacing
                 Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => _openFolder(outputPath!),
-                    icon: const Icon(Icons.folder_open, size: 16),
-                    label: const Text('Open Folder'),
+                  child: SizedBox(
+                    height: 48, // Target size conformity
+                    child: OutlinedButton.icon(
+                      onPressed: () => _openFolder(outputPath!),
+                      icon: const Icon(Icons.folder_open, size: 20),
+                      label: const Text('Open Folder'),
+                    ),
                   ),
                 ),
               ],
@@ -117,12 +137,12 @@ class ConversionStatusWidget extends StatelessWidget {
 
           if (message.isNotEmpty && status == ConversionStatus.error)
             Padding(
-              padding: const EdgeInsets.only(top: 12),
+              padding: const EdgeInsets.only(top: 16), // 8pt spacing
               child: Container(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: Colors.red.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(16), // Nested Radii
                 ),
                 child: Text(
                   message,

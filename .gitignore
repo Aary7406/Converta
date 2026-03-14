@@ -4,6 +4,13 @@
 *.pyc
 *.swp
 .DS_Store
+
+# Agents & Workflows
+.agent/
+.agents/
+_agent/
+_agents/
+
 .atom/
 .build/
 .buildlog/

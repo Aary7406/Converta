@@ -1,4 +1,3 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -37,30 +36,31 @@ class CustomTitleBar extends StatelessWidget {
                 
                 const Spacer(),
                 
-                // Mac-like (rounded circles) colored window controls
-                // Positioned on the right for native Windows/Steam feel
-                _WindowControlButton(
-                  icon: CupertinoIcons.minus,
-                  color: const Color(0xFFFFBD2E), // Mac Yellow
-                  onTap: () => windowManager.minimize(),
-                ),
-                const SizedBox(width: 8),
-                _WindowControlButton(
-                  icon: CupertinoIcons.plus, // maximize
-                  color: const Color(0xFF28C940), // Mac Green
-                  onTap: () async {
-                    if (await windowManager.isMaximized()) {
-                      windowManager.unmaximize();
-                    } else {
-                      windowManager.maximize();
-                    }
-                  },
-                ),
-                const SizedBox(width: 8),
-                _WindowControlButton(
-                  icon: CupertinoIcons.xmark,
-                  color: const Color(0xFFFF5F56), // Mac Red
-                  onTap: () => windowManager.close(),
+                // Windows 7 Style Buttons
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _WindowsTitleBarButton(
+                      icon: Icons.minimize,
+                      onTap: () => windowManager.minimize(),
+                    ),
+                    _WindowsTitleBarButton(
+                      // We use crop_square for maximize and fullscreen_exit for restore
+                      icon: Icons.crop_square, 
+                      onTap: () async {
+                        if (await windowManager.isMaximized()) {
+                          windowManager.unmaximize();
+                        } else {
+                          windowManager.maximize();
+                        }
+                      },
+                    ),
+                    _WindowsTitleBarButton(
+                      icon: Icons.close,
+                      isClose: true,
+                      onTap: () => windowManager.close(),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -71,52 +71,52 @@ class CustomTitleBar extends StatelessWidget {
   }
 }
 
-class _WindowControlButton extends StatefulWidget {
+class _WindowsTitleBarButton extends StatefulWidget {
   final IconData icon;
-  final Color color;
   final VoidCallback onTap;
+  final bool isClose;
 
-  const _WindowControlButton({
+  const _WindowsTitleBarButton({
     required this.icon,
-    required this.color,
     required this.onTap,
+    this.isClose = false,
   });
 
   @override
-  State<_WindowControlButton> createState() => _WindowControlButtonState();
+  State<_WindowsTitleBarButton> createState() => _WindowsTitleBarButtonState();
 }
 
-class _WindowControlButtonState extends State<_WindowControlButton> {
+class _WindowsTitleBarButtonState extends State<_WindowsTitleBarButton> {
   bool isHovered = false;
 
   @override
   Widget build(BuildContext context) {
+    // Windows 7 Classic Close Hover Red: #E81123
+    final hoverColor = widget.isClose 
+        ? const Color(0xFFE81123) 
+        : Colors.white.withValues(alpha: 0.1);
+        
+    final iconColor = (isHovered && widget.isClose)
+        ? Colors.white
+        : Colors.white70;
+
     return MouseRegion(
       onEnter: (_) => setState(() => isHovered = true),
       onExit: (_) => setState(() => isHovered = false),
       child: GestureDetector(
         onTap: widget.onTap,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          width: 16,
-          height: 16,
+          duration: const Duration(milliseconds: 100),
+          width: 46, // Standard Windows title bar button width
+          height: 40, // Match title bar height
           decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: widget.color,
-            border: Border.all(
-              color: Colors.black.withValues(alpha: 0.2),
-              width: 0.5,
-            ),
+            color: isHovered ? hoverColor : Colors.transparent,
           ),
           child: Center(
-            child: AnimatedOpacity(
-              duration: const Duration(milliseconds: 150),
-              opacity: isHovered ? 1.0 : 0.0, // Only show inner icon on hover like macOS
-              child: Icon(
-                widget.icon,
-                size: 10,
-                color: Colors.black.withValues(alpha: 0.6), 
-              ),
+            child: Icon(
+              widget.icon,
+              size: 16,
+              color: iconColor,
             ),
           ),
         ),

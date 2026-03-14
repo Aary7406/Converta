@@ -10,13 +10,13 @@ import '../widgets/matrix_rain_background.dart';
 /// ARCHITECTURE:
 ///   - Stack: Matrix Rain (full window) → Content Row
 ///   - Row: GlassNavBar (left, 72px) + Expanded ConverterPage (right)
-///   - AnimatedSwitcher handles tab transitions with slide + fade
+///   - _FadeIndexedStack preserves tab state with smooth fade+slide transitions
 ///
 /// PERFORMANCE:
 ///   - Matrix Rain background is in its own RepaintBoundary (built-in)
 ///   - Navbar has its own RepaintBoundary (built-in)
 ///   - Content area wrapped in RepaintBoundary
-///   - AnimatedSwitcher only rebuilds the content widget, not the navbar
+///   - IndexedStack keeps all tabs alive, preventing re-initialization
 import '../widgets/custom_title_bar.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -62,26 +62,14 @@ class _HomeScreenState extends State<HomeScreen> {
                       // Content area
                       Expanded(
                         child: RepaintBoundary(
-                          child: AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 300),
-                            switchInCurve: Curves.easeOut,
-                            switchOutCurve: Curves.easeIn,
-                            transitionBuilder: (child, animation) {
-                              return FadeTransition(
-                                opacity: animation,
-                                child: SlideTransition(
-                                  position: Tween<Offset>(
-                                    begin: const Offset(0.05, 0),
-                                    end: Offset.zero,
-                                  ).animate(animation),
-                                  child: child,
-                                ),
+                          child: _FadeIndexedStack(
+                            index: _activeTab.index,
+                            children: MediaCategory.values.map((category) {
+                              return ConverterPage(
+                                key: ValueKey(category),
+                                category: category,
                               );
-                            },
-                            child: ConverterPage(
-                              key: ValueKey(_activeTab),
-                              category: _activeTab,
-                            ),
+                            }).toList(),
                           ),
                         ),
                       ),
@@ -92,6 +80,80 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// A custom IndexedStack that fades between its children to preserve state
+/// without losing the premium animated feel.
+class _FadeIndexedStack extends StatefulWidget {
+  final int index;
+  final List<Widget> children;
+
+  const _FadeIndexedStack({
+    required this.index,
+    required this.children,
+  });
+
+  @override
+  State<_FadeIndexedStack> createState() => _FadeIndexedStackState();
+}
+
+class _FadeIndexedStackState extends State<_FadeIndexedStack>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _fadeAnimation;
+  late final Animation<Offset> _slideAnimation;
+  int _currentIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentIndex = widget.index;
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOut),
+    );
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0.02, 0.0),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
+
+    _controller.forward();
+  }
+
+  @override
+  void didUpdateWidget(_FadeIndexedStack oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.index != _currentIndex) {
+      _controller.reverse().then((_) {
+        if (!mounted) return;
+        setState(() => _currentIndex = widget.index);
+        _controller.forward();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _fadeAnimation,
+      child: SlideTransition(
+        position: _slideAnimation,
+        child: IndexedStack(
+          index: _currentIndex,
+          children: widget.children,
+        ),
       ),
     );
   }

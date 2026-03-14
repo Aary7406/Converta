@@ -29,14 +29,15 @@ class FileSelector extends StatelessWidget {
       child: GestureDetector(
         onTap: _pickFile,
         child: GlassContainer(
-          borderRadius: 25.0,
+          padding: const EdgeInsets.all(24), // 8pt Grid: match outer cards
+          borderRadius: 24.0, // Match outer cards
           child: Row(
             children: [
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(8), // Nested Radii: 24 - (parent padding) -> Use an 8pt radius for inner icons
                 ),
                 child: Icon(
                   hasFile ? Icons.insert_drive_file : Icons.folder_open,
@@ -44,7 +45,7 @@ class FileSelector extends StatelessWidget {
                   size: 28,
                 ),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 16), // 8pt grid
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
