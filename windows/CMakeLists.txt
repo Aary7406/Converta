@@ -109,7 +109,100 @@ install(CODE "
 install(DIRECTORY "${PROJECT_BUILD_DIR}/${FLUTTER_ASSET_DIR_NAME}"
   DESTINATION "${INSTALL_BUNDLE_DATA_DIR}" COMPONENT Runtime)
 
+
 # Install the AOT library on non-Debug builds only.
 install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   CONFIGURATIONS Profile;Release
   COMPONENT Runtime)
+
+# --- CONVERTA NATIVE ---
+# Builds converta_core.dll from the native C++ sources and copies it
+# (plus FFmpeg runtime DLLs) next to the Flutter exe on every build.
+#
+# Assumed layout (relative to repo root):
+#   native/
+#     include/          converta.h
+#     src/              converta.cpp  avif_codec.cpp
+#     third_party/
+#       ffmpeg-windows/
+#         include/      FFmpeg headers
+#         lib/          avcodec.lib  avformat.lib  avutil.lib  swscale.lib  swresample.lib
+#         bin/          avcodec-*.dll  avformat-*.dll  avutil-*.dll  swscale-*.dll  swresample-*.dll
+#       libavif/
+#         include/      avif/avif.h
+#         lib/          avif.lib
+#         bin/          avif.dll
+#       stb/
+#         stb_image.h   stb_image_write.h
+
+set(CONVERTA_NATIVE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../native")
+set(CONVERTA_FFMPEG_DIR "${CONVERTA_NATIVE_DIR}/third_party/ffmpeg-windows")
+set(CONVERTA_AVIF_DIR   "${CONVERTA_NATIVE_DIR}/third_party/libavif")
+set(CONVERTA_STB_DIR    "${CONVERTA_NATIVE_DIR}/third_party/stb")
+
+# ── Build the DLL ─────────────────────────────────────────────────────────────
+add_library(converta_core SHARED
+  "${CONVERTA_NATIVE_DIR}/src/converta.cpp"
+  "${CONVERTA_NATIVE_DIR}/src/avif_codec.cpp"
+  "${CONVERTA_NATIVE_DIR}/src/thread_pool.cpp"
+)
+
+target_compile_definitions(converta_core PRIVATE CONVERTA_CORE_EXPORTS)
+
+target_include_directories(converta_core PRIVATE
+  "${CONVERTA_NATIVE_DIR}/include"
+  "${CONVERTA_FFMPEG_DIR}/include"
+  "${CONVERTA_AVIF_DIR}/include"
+  "${CONVERTA_STB_DIR}"
+)
+
+target_link_libraries(converta_core PRIVATE
+  "${CONVERTA_FFMPEG_DIR}/lib/avcodec.lib"
+  "${CONVERTA_FFMPEG_DIR}/lib/avformat.lib"
+  "${CONVERTA_FFMPEG_DIR}/lib/avutil.lib"
+  "${CONVERTA_FFMPEG_DIR}/lib/swscale.lib"
+  "${CONVERTA_FFMPEG_DIR}/lib/swresample.lib"
+  "${CONVERTA_AVIF_DIR}/lib/avif.lib"
+)
+
+# Use C++17 (already the project standard, stated explicitly for clarity).
+set_target_properties(converta_core PROPERTIES CXX_STANDARD 17)
+
+# ── Copy DLLs next to the runner exe after each build ─────────────────────────
+# $<TARGET_FILE_DIR:Converta> resolves to the correct Debug/Profile/Release dir.
+set(CONVERTA_OUTPUT_DIR "$<TARGET_FILE_DIR:${BINARY_NAME}>")
+
+# converta_core.dll itself
+add_custom_command(TARGET converta_core POST_BUILD
+  COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+    "$<TARGET_FILE:converta_core>"
+    "${CONVERTA_OUTPUT_DIR}/"
+  COMMENT "Copying converta_core.dll to runner output"
+)
+
+# FFmpeg runtime DLLs (globbed at configure time; covers gyan.dev naming like avcodec-61.dll)
+file(GLOB CONVERTA_FFMPEG_DLLS "${CONVERTA_FFMPEG_DIR}/bin/*.dll")
+if(CONVERTA_FFMPEG_DLLS)
+  add_custom_command(TARGET converta_core POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+      ${CONVERTA_FFMPEG_DLLS}
+      "${CONVERTA_OUTPUT_DIR}/"
+    COMMENT "Copying FFmpeg DLLs to runner output"
+  )
+endif()
+
+# libavif runtime DLL
+file(GLOB CONVERTA_AVIF_DLLS "${CONVERTA_AVIF_DIR}/bin/*.dll")
+if(CONVERTA_AVIF_DLLS)
+  add_custom_command(TARGET converta_core POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+      ${CONVERTA_AVIF_DLLS}
+      "${CONVERTA_OUTPUT_DIR}/"
+    COMMENT "Copying libavif DLLs to runner output"
+  )
+endif()
+
+# (Removed explicit add_dependencies(${BINARY_NAME} converta_core) here
+# because $<TARGET_FILE_DIR> implicitly handles the structural dependency
+# without creating a cyclic dependency loop.)
+# --- END CONVERTA NATIVE ---

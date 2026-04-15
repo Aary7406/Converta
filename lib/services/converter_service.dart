@@ -4,42 +4,14 @@ import 'dart:isolate';
 import '../models/conversion_job.dart';
 import '../services/libvips_converter.dart';
 import 'format_registry.dart';
+import 'native_bridge.dart';
 
-/// Optimized conversion service.
-///
-/// QUALITY STRATEGY (Phase 3.0):
-///   All presets are at ABSOLUTE HIGHEST quality:
-///   - Video:  `-qscale:v 0`  (max dynamic bitrate, zero visual compression)
-///   - Audio:  `-q:a 0`       (max VBR ~245-285 kbps)
-///   - Copy:   `-c:a copy`    (bit-perfect audio passthrough)
-///
-/// SPEED STRATEGY (Phase 6.0) — zero quality impact:
-///   - `-threads 0`: Tells FFmpeg to use ALL available CPU cores.
-///     Default is single-threaded; this gives 2-8x speedup on multi-core.
-///   - `-r 1` (Image→Video): Encodes 1fps instead of 30fps for still
-///     images. 5 frames instead of 150. ~30x faster, identical output.
-///   - GIF: Two-pass palette generation (industry standard).
-///   - Frame extraction: `-an` skips audio processing entirely.
+/// Routes conversions to the correct engine (FFmpeg, libvips, ImageMagick).
+/// GIF→Video is delegated to VideoService. Heavy work runs in Isolate.run().
 
 class ConverterService {
-  /// Runs conversion off the UI thread.
-  ///
-  /// ISOLATION STRATEGY:
-  ///   - libvips: Already runs in a compute isolate internally
-  ///     (VipsPipelineCompute). Calling it directly avoids double-isolating.
-  ///   - FFmpeg/ImageMagick: Wraps the Process.run call in Isolate.run()
-  ///     so subprocess management doesn't block the main event loop.
-  ///
-  /// WHY Isolate.run():
-  ///   - Spawns a one-shot isolate, runs the function, returns the result
-  ///   - Uses Isolate.exit() internally for zero-copy result transfer
-  ///   - Auto-cleans up — no manual port/isolate lifecycle management
-  ///   - Error propagation works with standard try/catch
-  ///
-  /// CLOSURE SAFETY:
-  ///   The closure captures only String values (inputPath, outputFormat,
-  ///   outputPath) which are immutable and sendable between isolates.
-  ///   ConverterService.convert is a static method — no instance state.
+  /// Runs conversion off the UI thread. libvips calls its own isolate internally;
+  /// FFmpeg/ImageMagick are wrapped in Isolate.run() for non-blocking subprocess management.
   static Future<ConversionResult> convertInBackground({
     required String inputPath,
     required String outputFormat,
@@ -81,6 +53,14 @@ class ConverterService {
         outputPath: outputPath,
         outputFormat: outputFormat,
       );
+    }
+
+    if (outputFormat.toLowerCase() == 'avif') {
+      return NativeBridge.encodeAvif(input: inputPath, output: outputPath);
+    }
+    
+    if (inputExtension == 'avif') {
+      return NativeBridge.decodeAvif(input: inputPath, output: outputPath);
     }
 
     // FFmpeg and ImageMagick spawn external processes via Process.run().
@@ -155,20 +135,20 @@ class ConverterService {
             '2',
             outputPath,
           ];
+        } else if (inputExtension == 'gif' &&
+            FormatRegistry.isImageToVideo(inputExtension, outputFormat)) {
+          // Handled earlier in convertInBackground -> VideoService -> NativeBridge
+          return ConversionResult(
+            success: false,
+            outputPath: '',
+            message: 'GIF logic routing error. Should not reach here.',
+            elapsed: Duration.zero,
+          );
         } else if (FormatRegistry.isImageToVideo(
           inputExtension,
           outputFormat,
         )) {
           // STILL IMAGE → VIDEO (5-second loop)
-          // -r 1             = 1fps output (only 5 frames for 5s, ~30x faster)
-          //                    since every frame is the same still image,
-          //                    there is ZERO quality difference vs 30fps
-          // -threads 0       = use all CPU cores
-          // -loop 1          = loop the single input image
-          // -t 5             = stop after 5 seconds
-          // -c:v libx264     = universally compatible H.264 video codec
-          // -tune stillimage = optimize encoder for still images
-          // -pix_fmt yuv420p = ensure colorspace compatibility with all players
           arguments = [
             '-y',
             '-loop',

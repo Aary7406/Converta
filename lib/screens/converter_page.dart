@@ -55,6 +55,8 @@ class _ConverterPageState extends State<ConverterPage> {
   String? _outputPath;
   final _outputPathController = TextEditingController();
 
+  bool _canConvertCached = false;
+
   @override
   void initState() {
     super.initState();
@@ -81,7 +83,12 @@ class _ConverterPageState extends State<ConverterPage> {
   /// Lightweight listener: only triggers setState when the Convert button
   /// enable/disable state actually changes, avoiding full tree rebuilds.
   void _onOutputPathChanged() {
-    setState(() {});
+    final canConvertNow = _canConvert;
+    if (_canConvertCached != canConvertNow) {
+      setState(() {
+        _canConvertCached = canConvertNow;
+      });
+    }
   }
 
   void _resetAll() {
@@ -185,7 +192,7 @@ class _ConverterPageState extends State<ConverterPage> {
         : inputName;
     final suggestedName = '$baseName.$format';
 
-    final result = await FilePicker.platform.saveFile(
+    final result = await FilePicker.saveFile(
       dialogTitle: 'Save converted file as',
       fileName: suggestedName,
       type: FileType.any,
@@ -241,6 +248,8 @@ class _ConverterPageState extends State<ConverterPage> {
 
   @override
   Widget build(BuildContext context) {
+    _canConvertCached = _canConvert;
+
     // Files tab — coming soon
     if (widget.category == MediaCategory.files) {
       return Center(
@@ -280,24 +289,20 @@ class _ConverterPageState extends State<ConverterPage> {
 
     final inputExts = FormatRegistry.inputFormatsForCategory(widget.category);
 
-    return CustomScrollView(
-      slivers: [
-        SliverFillRemaining(
-          hasScrollBody: false,
-          child: Padding(
-            padding: const EdgeInsets.all(32), // 8pt Grid: 32 outer padding
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 560),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // 1. File Selector
-                    FileSelector(
-                      selectedFile: _selectedFile,
-                      onFileSelected: _onFileSelected,
-                      allowedExtensions: inputExts,
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(32), // 8pt Grid: 32 outer padding
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // 1. File Selector
+              FileSelector(
+                selectedFile: _selectedFile,
+                onFileSelected: _onFileSelected,
+                allowedExtensions: inputExts,
                     ),
 
                     // 2. Conversion Mode
@@ -379,13 +384,10 @@ class _ConverterPageState extends State<ConverterPage> {
                       elapsed: _elapsed,
                       outputPath: _outputPath,
                     ),
-                  ],
-                ),
-              ),
-            ),
+            ],
           ),
         ),
-      ],
+      ),
     );
   }
 

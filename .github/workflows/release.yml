@@ -1,0 +1,70 @@
+name: Windows Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Create Native Directories
+        run: |
+          New-Item -ItemType Directory -Force -Path "native/third_party/ffmpeg-windows/bin"
+          New-Item -ItemType Directory -Force -Path "native/third_party/ffmpeg-windows/include"
+          New-Item -ItemType Directory -Force -Path "native/third_party/ffmpeg-windows/lib"
+          New-Item -ItemType Directory -Force -Path "native/third_party/stb"
+          New-Item -ItemType Directory -Force -Path "native/third_party/libavif/bin"
+          New-Item -ItemType Directory -Force -Path "native/third_party/libavif/include/avif"
+          New-Item -ItemType Directory -Force -Path "native/third_party/libavif/lib"
+
+      - name: Download STB Headers
+        run: |
+          Invoke-WebRequest -Uri "https://raw.githubusercontent.com/nothings/stb/master/stb_image.h" -OutFile "native/third_party/stb/stb_image.h"
+          Invoke-WebRequest -Uri "https://raw.githubusercontent.com/nothings/stb/master/stb_image_write.h" -OutFile "native/third_party/stb/stb_image_write.h"
+
+      - name: Download FFmpeg Shared Build
+        run: |
+          Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-full-shared.7z" -OutFile "ffmpeg.7z"
+          7z x ffmpeg.7z -offmpeg_extracted
+          $ffmpegDir = Get-ChildItem -Path "ffmpeg_extracted" | Where-Object { $_.PSIsContainer } | Select-Object -First 1
+          Copy-Item -Path "$($ffmpegDir.FullName)\include\*" -Destination "native/third_party/ffmpeg-windows/include" -Recurse -Force
+          Copy-Item -Path "$($ffmpegDir.FullName)\lib\*" -Destination "native/third_party/ffmpeg-windows/lib" -Recurse -Force
+          Copy-Item -Path "$($ffmpegDir.FullName)\bin\*.dll" -Destination "native/third_party/ffmpeg-windows/bin" -Force
+
+      - name: Download libavif Official Artifacts
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/AOMediaCodec/libavif/releases/latest/download/windows-artifacts.zip" -OutFile "avif.zip"
+          Expand-Archive "avif.zip" -DestinationPath "avif_extracted"
+          # Search recursively for the release DLLs and libs
+          Get-ChildItem -Path "avif_extracted" -Recurse -Filter "avif.dll" | Where-Object { $_.FullName -match "shared" -and $_.FullName -match "Release" } | Select-Object -First 1 | Copy-Item -Destination "native/third_party/libavif/bin/avif.dll"
+          Get-ChildItem -Path "avif_extracted" -Recurse -Filter "dav1d.dll" | Where-Object { $_.FullName -match "shared" -and $_.FullName -match "Release" } | Select-Object -First 1 | Copy-Item -Destination "native/third_party/libavif/bin/dav1d.dll"
+          Get-ChildItem -Path "avif_extracted" -Recurse -Filter "avif.lib" | Where-Object { $_.FullName -match "shared" -and $_.FullName -match "Release" } | Select-Object -First 1 | Copy-Item -Destination "native/third_party/libavif/lib/avif.lib"
+          Get-ChildItem -Path "avif_extracted" -Recurse -Filter "avif.h" | Select-Object -First 1 | Copy-Item -Destination "native/third_party/libavif/include/avif/avif.h"
+
+      - name: Build Windows Executable
+        run: |
+          flutter pub get
+          flutter build windows
+
+      - name: Package Release
+        run: |
+          Compress-Archive -Path "build\windows\x64\runner\Release\*" -DestinationPath "Converta-Windows-${{ github.ref_name }}.zip"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: Converta-Windows-${{ github.ref_name }}.zip
+          generate_release_notes: true

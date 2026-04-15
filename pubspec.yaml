@@ -1,4 +1,4 @@
-name: Converta
+name: converta
 description: "Converta - Universal offline file converter for Windows."
 publish_to: 'none'
 version: 1.2.0
@@ -9,11 +9,11 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  cupertino_icons: ^1.0.8
-  file_picker: ^10.3.10
+  file_picker: ^11.0.2
   window_manager: ^0.5.1
   adaptive_platform_ui: ^0.1.103
   libvips_ffi: ^0.1.2+8.16.0
+  ffi: ^2.1.0
 
 dev_dependencies:
   flutter_test:

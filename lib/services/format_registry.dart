@@ -25,6 +25,7 @@ class FormatRegistry {
     'bmp',
     'gif',
     'tiff',
+    'avif',
   ];
 
   /// Every format we support as input.
@@ -140,6 +141,8 @@ class FormatRegistry {
     if (imageFormats.contains(input) && output == 'gif') {
       return ConversionEngine.imageMagick;
     }
+    // Force FFmpeg for all GIF processing to prevent libvips multi-threading deadlocks
+    if (input == 'gif') return ConversionEngine.ffmpeg;
     if (imageFormats.contains(input)) return ConversionEngine.libvips;
     return null;
   }

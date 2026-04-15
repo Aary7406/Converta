@@ -88,7 +88,7 @@ class FileSelector extends StatelessWidget {
 
   void _pickFile() async {
     final exts = allowedExtensions ?? FormatRegistry.allInputFormats.toList();
-    final result = await FilePicker.platform.pickFiles(
+    final result = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: exts,
     );
