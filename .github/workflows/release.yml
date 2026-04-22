@@ -68,7 +68,8 @@ jobs:
         run: |
           Invoke-WebRequest -Uri "https://github.com/libvips/build-win64-mxe/releases/download/v8.16.0/vips-dev-w64-all-8.16.0.zip" -OutFile "vips.zip"
           Expand-Archive "vips.zip" -DestinationPath "vips_extracted"
-          Move-Item -Path "vips_extracted/vips-dev-8.16/vips-dev-8.16/*" -Destination "native/third_party/libvips" -Force
+          $vipsDir = Get-ChildItem -Path "vips_extracted" | Where-Object { $_.PSIsContainer } | Select-Object -First 1
+          Move-Item -Path "$($vipsDir.FullName)\*" -Destination "native/third_party/libvips" -Force
 
       - name: Build Windows Executable
         run: |
