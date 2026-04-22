@@ -2,52 +2,47 @@ import 'dart:io';
 import 'dart:isolate';
 
 import '../models/conversion_job.dart';
-import '../services/libvips_converter.dart';
 import 'format_registry.dart';
+import 'libvips_converter.dart';
 import 'native_bridge.dart';
 
-/// Routes conversions to the correct engine (FFmpeg, libvips, ImageMagick).
-/// GIF→Video is delegated to VideoService. Heavy work runs in Isolate.run().
-
 class ConverterService {
-  /// Runs conversion off the UI thread. libvips calls its own isolate internally;
-  /// FFmpeg/ImageMagick are wrapped in Isolate.run() for non-blocking subprocess management.
+  /// Absolute path to bundled ffmpeg.exe (next to the runner exe).
+  static String get _ffmpeg {
+    final dir = File(Platform.resolvedExecutable).parent.path;
+    return '$dir${Platform.pathSeparator}ffmpeg.exe';
+  }
+
+  // ── Public API ─────────────────────────────────────────────────────────────
+
   static Future<ConversionResult> convertInBackground({
     required String inputPath,
     required String outputFormat,
     required String outputPath,
   }) async {
-    // POKA-YOKE: Fail fast before spawning isolates or processes
     if (!File(inputPath).existsSync()) {
-      return ConversionResult(
-        success: false,
-        outputPath: '',
-        message: 'Input file does not exist. Please select a valid file.',
-        elapsed: Duration.zero,
+      return _err('Input file does not exist.');
+    }
+
+    final inExt = _ext(inputPath);
+
+    // GIF → video: handled by native bridge (ffmpeg via CreateProcess)
+    if (inExt == 'gif' && FormatRegistry.isImageToVideo(inExt, outputFormat)) {
+      return NativeBridge.gifToMp4(
+        input: inputPath,
+        output: outputPath,
+        crf: 18,
+        preset: 'veryfast',
       );
     }
 
-    final inputExtension = inputPath.contains('.') 
-        ? inputPath.split('.').last.toLowerCase() 
-        : '';
-        
-    final engine = FormatRegistry.getEngineForConversion(
-      inputExtension,
-      outputFormat,
-    );
-
+    final engine = FormatRegistry.getEngineForConversion(inExt, outputFormat);
     if (engine == null) {
-      return ConversionResult(
-        success: false,
-        outputPath: '',
-        message: 'Unsupported input format: .$inputExtension',
-        elapsed: Duration.zero,
-      );
+      return _err('Unsupported conversion: .$inExt → .$outputFormat');
     }
 
-    if (engine == ConversionEngine.libvips) {
-      // libvips already uses VipsPipelineCompute (built-in compute isolate).
-      // Calling it directly avoids unnecessary double-isolate overhead.
+    // Image-to-image: vips.exe (fast, no init issues, handles AVIF natively)
+    if (engine == ConversionEngine.vips) {
       return LibvipsConverter.convertImage(
         inputPath: inputPath,
         outputPath: outputPath,
@@ -55,318 +50,172 @@ class ConverterService {
       );
     }
 
-    if (outputFormat.toLowerCase() == 'avif') {
-      return NativeBridge.encodeAvif(input: inputPath, output: outputPath);
-    }
-    
-    if (inputExtension == 'avif') {
-      return NativeBridge.decodeAvif(input: inputPath, output: outputPath);
-    }
-
-    // FFmpeg and ImageMagick spawn external processes via Process.run().
-    // Moving this to a background isolate ensures the main isolate's event
-    // loop stays free for 60fps UI rendering (Matrix Rain + glass cards).
+    // Video/audio: spawn isolate so UI stays at 60fps
+    final ffmpeg = _ffmpeg;
     return Isolate.run(
-      () => convert(
+      () => _ffmpegConvert(
+        ffmpeg: ffmpeg,
         inputPath: inputPath,
         outputFormat: outputFormat,
         outputPath: outputPath,
       ),
-      debugName: 'converta_convert',
+      debugName: 'converta_ffmpeg',
     );
   }
 
-  static Future<ConversionResult> convert({
+  // ── FFmpeg worker (runs in Isolate.run) ────────────────────────────────────
+
+  static Future<ConversionResult> _ffmpegConvert({
+    required String ffmpeg,
     required String inputPath,
     required String outputFormat,
     required String outputPath,
   }) async {
-    // POKA-YOKE: Fail fast
-    if (!File(inputPath).existsSync()) {
-      return ConversionResult(
-        success: false,
-        outputPath: '',
-        message: 'Input file does not exist.',
-        elapsed: Duration.zero,
-      );
+    if (!File(inputPath).existsSync()) return _err('Input file not found.');
+
+    final inExt = _ext(inputPath);
+    final args = _buildFfmpegArgs(inExt, outputFormat, inputPath, outputPath);
+    if (args == null) {
+      return _err('Cannot build ffmpeg args for .$inExt → .$outputFormat');
     }
 
-    final inputExtension = inputPath.contains('.') 
-        ? inputPath.split('.').last.toLowerCase() 
-        : '';
-        
-    final engine = FormatRegistry.getEngineForConversion(
-      inputExtension,
-      outputFormat,
-    );
-
-    if (engine == null) {
-      return ConversionResult(
-        success: false,
-        outputPath: '',
-        message: 'Unsupported input format: .$inputExtension',
-        elapsed: Duration.zero,
-      );
+    // Two-pass GIF needs special handling
+    if (args == _kTwoPassGif) {
+      return _twoPassGif(ffmpeg, inputPath, outputPath);
     }
 
-    final String executable;
-    final List<String> arguments;
-
-    switch (engine) {
-      case ConversionEngine.ffmpeg:
-        executable = 'ffmpeg';
-
-        if (FormatRegistry.isVideoToImage(inputExtension, outputFormat)) {
-          // VIDEO → STILL IMAGE
-          // -threads 0 = use all CPU cores
-          // -an        = ignore audio stream (faster, no point for image)
-          // -frames:v 1 = grab just 1 frame
-          // -q:v 2     = high quality output
-          arguments = [
-            '-y',
-            '-threads',
-            '0',
-            '-i',
-            inputPath,
-            '-an',
-            '-frames:v',
-            '1',
-            '-q:v',
-            '2',
-            outputPath,
-          ];
-        } else if (inputExtension == 'gif' &&
-            FormatRegistry.isImageToVideo(inputExtension, outputFormat)) {
-          // Handled earlier in convertInBackground -> VideoService -> NativeBridge
-          return ConversionResult(
-            success: false,
-            outputPath: '',
-            message: 'GIF logic routing error. Should not reach here.',
-            elapsed: Duration.zero,
-          );
-        } else if (FormatRegistry.isImageToVideo(
-          inputExtension,
-          outputFormat,
-        )) {
-          // STILL IMAGE → VIDEO (5-second loop)
-          arguments = [
-            '-y',
-            '-loop',
-            '1',
-            '-r',
-            '1',
-            '-threads',
-            '0',
-            '-i',
-            inputPath,
-            '-c:v',
-            'libx264',
-            '-tune',
-            'stillimage',
-            '-t',
-            '5',
-            '-pix_fmt',
-            'yuv420p',
-            outputPath,
-          ];
-        } else if (FormatRegistry.isVideoToGif(inputExtension, outputFormat)) {
-          // VIDEO → GIF: Two-pass palette approach
-          // This is MUCH faster than single-pass because the palette reduces
-          // the color space upfront, so encoding each frame is cheaper.
-          return _convertToGif(inputPath, outputPath);
-        } else if (_isAudioOutput(outputFormat)) {
-          // VIDEO/AUDIO → AUDIO
-          // -threads 0 = use all CPU cores
-          // -vn        = skip video stream (faster for audio-only output)
-          // -q:a 0     = maximum VBR quality (approx 245-285 kbps)
-          arguments = [
-            '-y',
-            '-threads',
-            '0',
-            '-i',
-            inputPath,
-            '-vn',
-            '-q:a',
-            '0',
-            outputPath,
-          ];
-        } else {
-          // VIDEO → VIDEO (re-encode)
-          // -threads 0   = use all CPU cores (2-8x faster on multi-core)
-          // -c:a copy    = copy audio stream exactly as is
-          // -qscale:v 0  = highest possible dynamic quality (matches original bitrate)
-          // -movflags +faststart = optimize for streaming
-          arguments = [
-            '-y',
-            '-threads',
-            '0',
-            '-i',
-            inputPath,
-            '-c:a',
-            'copy',
-            '-qscale:v',
-            '0',
-            '-movflags',
-            '+faststart',
-            outputPath,
-          ];
-        }
-        break;
-
-      case ConversionEngine.imageMagick:
-        executable = 'magick';
-        arguments = [inputPath, outputPath];
-        break;
-
-      case ConversionEngine.libvips:
-        // Route directly to the libvips C library via Dart FFI.
-        // This early-return bypasses the _runProcess() subprocess path entirely.
-        return LibvipsConverter.convertImage(
-          inputPath: inputPath,
-          outputPath: outputPath,
-          outputFormat: outputFormat,
-        );
-    }
-
-    return _runProcess(executable, arguments, outputPath);
+    return _run(ffmpeg, args, outputPath);
   }
 
-  /// Two-pass GIF encoding:
-  ///   Pass 1: Generate optimal 256-color palette from the video
-  ///   Pass 2: Encode GIF using that palette
-  ///
-  /// WHY TWO PASSES?
-  ///   GIF only supports 256 colors. Without a palette, FFmpeg picks colors
-  ///   randomly → banding, dithering, huge file size. With a custom palette,
-  ///   it picks the 256 BEST colors for your specific video → sharp, small GIF.
-  ///
-  /// SPEED OPTIMIZATIONS:
-  ///   - fps=8: 8 frames per second (was 10, saves 20% encoding time)
-  ///   - scale=320:-1: width 320px (was 480, cuts pixel count in half)
-  ///   - lanczos: best quality scaling for downscale
-  static Future<ConversionResult> _convertToGif(
-    String inputPath,
-    String outputPath,
-  ) async {
-    final stopwatch = Stopwatch()..start();
+  static const _kTwoPassGif = <String>['__TWO_PASS_GIF__'];
 
-    // Create a temporary palette file next to the output
-    final paletteDir = Directory.systemTemp;
-    final palettePath =
-        '${paletteDir.path}\\gif_palette_${DateTime.now().millisecondsSinceEpoch}.png';
+  static List<String>? _buildFfmpegArgs(
+      String inExt, String outFmt, String input, String output) {
+    if (FormatRegistry.isVideoToGif(inExt, outFmt)) return _kTwoPassGif;
+
+    if (FormatRegistry.isVideoToImage(inExt, outFmt)) {
+      return [
+        '-y', '-hwaccel', 'auto', '-threads', '0',
+        '-i', input, '-an', '-frames:v', '1', '-q:v', '2', output,
+      ];
+    }
+
+    if (FormatRegistry.isImageToVideo(inExt, outFmt)) {
+      return [
+        '-y', '-loop', '1', '-r', '1',
+        '-hwaccel', 'auto', '-threads', '0',
+        '-i', input,
+        '-c:v', 'libx264', '-tune', 'stillimage',
+        '-t', '5', '-pix_fmt', 'yuv420p', output,
+      ];
+    }
+
+    if (FormatRegistry.isAudioFormat(outFmt)) {
+      return [
+        '-y', '-threads', '0', '-i', input,
+        '-vn', '-q:a', '0', output,
+      ];
+    }
+
+    // Video → video
+    return [
+      '-y', '-hwaccel', 'auto', '-threads', '0',
+      '-i', input, '-c:a', 'copy', '-qscale:v', '0',
+      '-movflags', '+faststart', output,
+    ];
+  }
+
+  // ── Two-pass video→GIF ────────────────────────────────────────────────────
+
+  static Future<ConversionResult> _twoPassGif(
+      String ffmpeg, String input, String output) async {
+    final sw = Stopwatch()..start();
+    final palette =
+        '${Directory.systemTemp.path}${Platform.pathSeparator}'
+        'gif_pal_${DateTime.now().millisecondsSinceEpoch}.png';
 
     try {
-      // ── Pass 1: Generate palette ──────────────────────────────────
-      final paletteResult = await Process.run('ffmpeg', [
-        '-y',
-        '-threads',
-        '0',
-        '-i',
-        inputPath,
-        '-vf',
-        'fps=8,scale=320:-1:flags=lanczos,palettegen=stats_mode=diff',
-        palettePath,
+      final pass1 = await Process.run(ffmpeg, [
+        '-y', '-threads', '0', '-i', input,
+        '-vf', 'fps=8,scale=320:-1:flags=lanczos,palettegen=stats_mode=diff',
+        palette,
       ]);
-
-      if (paletteResult.exitCode != 0) {
-        stopwatch.stop();
+      if (pass1.exitCode != 0) {
         return ConversionResult(
-          success: false,
-          outputPath: '',
-          message: 'GIF palette generation failed:\n${paletteResult.stderr}',
-          elapsed: stopwatch.elapsed,
+          success: false, outputPath: '',
+          message: 'GIF palette failed:\n${pass1.stderr}',
+          elapsed: sw.elapsed,
         );
       }
 
-      // ── Pass 2: Encode GIF with palette ───────────────────────────
-      final gifResult = await Process.run('ffmpeg', [
-        '-y',
-        '-threads',
-        '0',
-        '-i',
-        inputPath,
-        '-i',
-        palettePath,
+      final pass2 = await Process.run(ffmpeg, [
+        '-y', '-threads', '0', '-i', input, '-i', palette,
         '-lavfi',
-        'fps=8,scale=320:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=5',
-        outputPath,
+        'fps=8,scale=320:-1:flags=lanczos[x];[x][1:v]'
+        'paletteuse=dither=bayer:bayer_scale=5',
+        output,
       ]);
+      sw.stop();
+      _tryDelete(palette);
 
-      stopwatch.stop();
-
-      // Clean up temp palette file
-      try {
-        File(palettePath).deleteSync();
-      } catch (_) {}
-
-      final success = gifResult.exitCode == 0;
-      return ConversionResult(
-        success: success,
-        outputPath: success ? outputPath : '',
-        message: success
-            ? 'GIF conversion completed successfully.'
-            : 'GIF encoding failed:\n${gifResult.stderr}',
-        elapsed: stopwatch.elapsed,
-      );
+      return pass2.exitCode == 0
+          ? ConversionResult(
+              success: true, outputPath: output,
+              message: 'GIF conversion complete.',
+              elapsed: sw.elapsed)
+          : ConversionResult(
+              success: false, outputPath: '',
+              message: 'GIF encode failed:\n${pass2.stderr}',
+              elapsed: sw.elapsed);
     } catch (e) {
-      stopwatch.stop();
-      try {
-        File(palettePath).deleteSync();
-      } catch (_) {}
-
+      sw.stop();
+      _tryDelete(palette);
       return ConversionResult(
-        success: false,
-        outputPath: '',
-        message: e.toString(),
-        elapsed: stopwatch.elapsed,
-      );
+          success: false, outputPath: '', message: '$e', elapsed: sw.elapsed);
     }
   }
 
-  /// Checks if the output format is audio-only.
-  static bool _isAudioOutput(String format) {
-    return FormatRegistry.audioFormats.contains(format.toLowerCase());
-  }
+  // ── Helpers ───────────────────────────────────────────────────────────────
 
-  /// Runs an external process and wraps the result.
-  static Future<ConversionResult> _runProcess(
-    String executable,
-    List<String> arguments,
-    String outputPath,
-  ) async {
-    final stopwatch = Stopwatch()..start();
-
+  static Future<ConversionResult> _run(
+      String exe, List<String> args, String outputPath) async {
+    final sw = Stopwatch()..start();
     try {
-      final result = await Process.run(executable, arguments);
-      stopwatch.stop();
-
-      final success = result.exitCode == 0;
-      final combinedOutput = '${result.stdout}\n${result.stderr}'.trim();
-
+      final r = await Process.run(exe, args);
+      sw.stop();
+      final ok = r.exitCode == 0;
       return ConversionResult(
-        success: success,
-        outputPath: success ? outputPath : '',
-        message: success
-            ? 'Conversion completed successfully.'
-            : 'Conversion failed (exit code ${result.exitCode}):\n$combinedOutput',
-        elapsed: stopwatch.elapsed,
+        success: ok,
+        outputPath: ok ? outputPath : '',
+        message: ok
+            ? 'Conversion complete.'
+            : 'Failed (exit ${r.exitCode}):\n'
+                '${('${r.stdout}\n${r.stderr}').trim()}',
+        elapsed: sw.elapsed,
       );
     } catch (e) {
-      stopwatch.stop();
-
-      String userMessage = e.toString();
-      if (userMessage.contains('cannot find the file') ||
-          userMessage.contains('is not recognized')) {
-        userMessage =
-            '"$executable" was not found. Make sure it is installed and on your system PATH.';
-      }
-
+      sw.stop();
+      final msg = '$e';
       return ConversionResult(
         success: false,
         outputPath: '',
-        message: userMessage,
-        elapsed: stopwatch.elapsed,
+        message: msg.contains('cannot find') || msg.contains('not recognized')
+            ? 'ffmpeg.exe not found. Run a Release build.'
+            : msg,
+        elapsed: sw.elapsed,
       );
     }
+  }
+
+  static ConversionResult _err(String msg) => ConversionResult(
+      success: false, outputPath: '', message: msg, elapsed: Duration.zero);
+
+  static String _ext(String path) =>
+      path.contains('.') ? path.split('.').last.toLowerCase() : '';
+
+  static void _tryDelete(String path) {
+    try {
+      File(path).deleteSync();
+    } catch (_) {}
   }
 }

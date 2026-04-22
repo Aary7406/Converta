@@ -147,6 +147,7 @@ add_library(converta_core SHARED
   "${CONVERTA_NATIVE_DIR}/src/thread_pool.cpp"
 )
 
+
 target_compile_definitions(converta_core PRIVATE CONVERTA_CORE_EXPORTS)
 
 target_include_directories(converta_core PRIVATE
@@ -180,18 +181,41 @@ add_custom_command(TARGET converta_core POST_BUILD
   COMMENT "Copying converta_core.dll to runner output"
 )
 
-# FFmpeg runtime DLLs (globbed at configure time; covers gyan.dev naming like avcodec-61.dll)
+# ffmpeg.exe — video/audio conversion engine.
+set(CONVERTA_FFMPEG_EXE "${CONVERTA_FFMPEG_DIR}/bin/ffmpeg.exe")
+if(EXISTS "${CONVERTA_FFMPEG_EXE}")
+  add_custom_command(TARGET converta_core POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+      "${CONVERTA_FFMPEG_EXE}"
+      "${CONVERTA_OUTPUT_DIR}/"
+    COMMENT "Copying ffmpeg.exe to runner output"
+  )
+else()
+  message(WARNING "ffmpeg.exe not found at ${CONVERTA_FFMPEG_EXE}.")
+endif()
+
+set(CONVERTA_VIPS_EXE "${CONVERTA_NATIVE_DIR}/third_party/libvips/bin/vips.exe")
+if(EXISTS "${CONVERTA_VIPS_EXE}")
+  add_custom_command(TARGET converta_core POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+      "${CONVERTA_VIPS_EXE}"
+      "${CONVERTA_OUTPUT_DIR}/"
+    COMMENT "Copying vips.exe to runner output"
+  )
+else()
+  message(WARNING "vips.exe not found at ${CONVERTA_VIPS_EXE}.")
+endif()
+
 file(GLOB CONVERTA_FFMPEG_DLLS "${CONVERTA_FFMPEG_DIR}/bin/*.dll")
 if(CONVERTA_FFMPEG_DLLS)
   add_custom_command(TARGET converta_core POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different
       ${CONVERTA_FFMPEG_DLLS}
       "${CONVERTA_OUTPUT_DIR}/"
-    COMMENT "Copying FFmpeg DLLs to runner output"
+    COMMENT "Copying FFmpeg runtime DLLs to runner output"
   )
 endif()
 
-# libavif runtime DLL
 file(GLOB CONVERTA_AVIF_DLLS "${CONVERTA_AVIF_DIR}/bin/*.dll")
 if(CONVERTA_AVIF_DLLS)
   add_custom_command(TARGET converta_core POST_BUILD
@@ -199,6 +223,21 @@ if(CONVERTA_AVIF_DLLS)
       ${CONVERTA_AVIF_DLLS}
       "${CONVERTA_OUTPUT_DIR}/"
     COMMENT "Copying libavif DLLs to runner output"
+  )
+endif()
+
+file(GLOB CONVERTA_LIBVIPS_DLLS "${CONVERTA_NATIVE_DIR}/third_party/libvips/bin/*.dll")
+if(CONVERTA_LIBVIPS_DLLS)
+  add_custom_command(TARGET converta_core POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+      ${CONVERTA_LIBVIPS_DLLS}
+      "${CONVERTA_OUTPUT_DIR}/"
+    COMMENT "Copying libvips DLLs to runner output"
+  )
+else()
+  message(WARNING
+    "No libvips DLLs found at ${CONVERTA_LIBVIPS_DIR}/bin/. "
+    "Image conversion via libvips will fail at runtime."
   )
 endif()
 

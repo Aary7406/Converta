@@ -50,4 +50,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
-/native/third_party/ffmpeg-windows/bin/
+/native/third_party/ffmpeg-windows/
+/native/third_party/libvips/
+/native/third_party/libavif/
+/native/third_party/stb/

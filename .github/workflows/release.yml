@@ -2,8 +2,8 @@ name: Windows Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - main
 
 jobs:
   build:
@@ -14,6 +14,15 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bump version and push tag
+        id: tag_version
+        uses: mathieudutour/github-tag-action@v6.2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          default_bump: patch
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -29,6 +38,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path "native/third_party/libavif/bin"
           New-Item -ItemType Directory -Force -Path "native/third_party/libavif/include/avif"
           New-Item -ItemType Directory -Force -Path "native/third_party/libavif/lib"
+          New-Item -ItemType Directory -Force -Path "native/third_party/libvips"
 
       - name: Download STB Headers
         run: |
@@ -43,16 +53,22 @@ jobs:
           Copy-Item -Path "$($ffmpegDir.FullName)\include\*" -Destination "native/third_party/ffmpeg-windows/include" -Recurse -Force
           Copy-Item -Path "$($ffmpegDir.FullName)\lib\*" -Destination "native/third_party/ffmpeg-windows/lib" -Recurse -Force
           Copy-Item -Path "$($ffmpegDir.FullName)\bin\*.dll" -Destination "native/third_party/ffmpeg-windows/bin" -Force
+          Copy-Item -Path "$($ffmpegDir.FullName)\bin\ffmpeg.exe" -Destination "native/third_party/ffmpeg-windows/bin" -Force
 
       - name: Download libavif Official Artifacts
         run: |
           Invoke-WebRequest -Uri "https://github.com/AOMediaCodec/libavif/releases/latest/download/windows-artifacts.zip" -OutFile "avif.zip"
           Expand-Archive "avif.zip" -DestinationPath "avif_extracted"
-          # Search recursively for the release DLLs and libs
           Get-ChildItem -Path "avif_extracted" -Recurse -Filter "avif.dll" | Where-Object { $_.FullName -match "shared" -and $_.FullName -match "Release" } | Select-Object -First 1 | Copy-Item -Destination "native/third_party/libavif/bin/avif.dll"
           Get-ChildItem -Path "avif_extracted" -Recurse -Filter "dav1d.dll" | Where-Object { $_.FullName -match "shared" -and $_.FullName -match "Release" } | Select-Object -First 1 | Copy-Item -Destination "native/third_party/libavif/bin/dav1d.dll"
           Get-ChildItem -Path "avif_extracted" -Recurse -Filter "avif.lib" | Where-Object { $_.FullName -match "shared" -and $_.FullName -match "Release" } | Select-Object -First 1 | Copy-Item -Destination "native/third_party/libavif/lib/avif.lib"
           Get-ChildItem -Path "avif_extracted" -Recurse -Filter "avif.h" | Select-Object -First 1 | Copy-Item -Destination "native/third_party/libavif/include/avif/avif.h"
+
+      - name: Download libvips Windows Binaries
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/libvips/build-win64-mxe/releases/download/v8.16.0/vips-dev-w64-all-8.16.0.zip" -OutFile "vips.zip"
+          Expand-Archive "vips.zip" -DestinationPath "vips_extracted"
+          Move-Item -Path "vips_extracted/vips-dev-8.16/vips-dev-8.16/*" -Destination "native/third_party/libvips" -Force
 
       - name: Build Windows Executable
         run: |
@@ -61,10 +77,12 @@ jobs:
 
       - name: Package Release
         run: |
-          Compress-Archive -Path "build\windows\x64\runner\Release\*" -DestinationPath "Converta-Windows-${{ github.ref_name }}.zip"
+          Compress-Archive -Path "build\windows\x64\runner\Release\*" -DestinationPath "Converta-Windows-${{ steps.tag_version.outputs.new_tag }}.zip"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          files: Converta-Windows-${{ github.ref_name }}.zip
+          tag_name: ${{ steps.tag_version.outputs.new_tag }}
+          name: Release ${{ steps.tag_version.outputs.new_tag }}
+          files: Converta-Windows-${{ steps.tag_version.outputs.new_tag }}.zip
           generate_release_notes: true
